@@ -1,0 +1,40 @@
+{
+  "name": "fitting",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darylrafael/Fitting.git"
+  },
+  "bugs": {
+    "url": "https://github.com/darylrafael/Fitting/issues"
+  },
+  "homepage": "https://github.com/darylrafael/Fitting#readme",
+  "scripts": {
+    "dev": "next dev",
+    "dev:https": "next dev --experimental-https --experimental-https-key ./certificates/key.pem --experimental-https-cert ./certificates/cert.pem -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.18",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.460.0",
+    "next": "^15.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.6.1",
+    "localtunnel": "^2.0.2",
+    "postcss": "^8.4.49",
+    "selfsigned": "^5.5.0",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
+}
