@@ -25,6 +25,8 @@ export class RigSolver {
   private targetQuaternion = new THREE.Quaternion();
 
   private isInitialized = false;
+  private lostTrackingFrames = 0;
+  private readonly maxLostTrackingFrames = 6;
 
   public reset(): void {
     this.filterLeftShoulder.reset();
@@ -33,6 +35,7 @@ export class RigSolver {
     this.filterRightHip.reset();
     this.filterNose.reset();
     this.isInitialized = false;
+    this.lostTrackingFrames = 0;
   }
 
   private toScreen(
@@ -76,14 +79,23 @@ export class RigSolver {
     const rawRH = landmarks[24];
 
     const minVis = 0.45;
-    if (
-      !rawLS || !rawRS ||
-      (rawLS.visibility ?? 1) < minVis ||
-      (rawRS.visibility ?? 1) < minVis
-    ) {
-      model.group.visible = false;
-      return false;
+    const isShoulderVisible =
+      rawLS &&
+      rawRS &&
+      (rawLS.visibility ?? 1) >= minVis &&
+      (rawRS.visibility ?? 1) >= minVis;
+
+    if (!isShoulderVisible) {
+      this.lostTrackingFrames++;
+      if (this.lostTrackingFrames > this.maxLostTrackingFrames) {
+        model.group.visible = false;
+        return false;
+      }
+      // Sustain last stable pose across momentary tracking drops (< 100ms) to prevent flicker
+      return true;
     }
+
+    this.lostTrackingFrames = 0;
 
     // 1. OneEuroFilter Smoothing
     const sLS = this.filterLeftShoulder.filter(rawLS.x, rawLS.y, rawLS.z, timestamp);

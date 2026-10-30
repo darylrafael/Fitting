@@ -34,9 +34,13 @@ export function ThreeCanvas({
   const modelRef = useRef<GarmentInstance | null>(null);
   const solverRef = useRef<RigSolver>(new RigSolver());
   const landmarksRef = useRef<Landmark[] | null>(landmarks);
+  const garmentColorRef = useRef(garmentColor);
+  const isWireframeRef = useRef(isWireframe);
   const animFrameIdRef = useRef<number | null>(null);
 
   landmarksRef.current = landmarks;
+  garmentColorRef.current = garmentColor;
+  isWireframeRef.current = isWireframe;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,8 +102,8 @@ export function ThreeCanvas({
         if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
       });
 
-      loadedModel.material.color.set(garmentColor);
-      loadedModel.material.wireframe = isWireframe;
+      loadedModel.material.color.set(garmentColorRef.current);
+      loadedModel.material.wireframe = isWireframeRef.current;
       scene.add(loadedModel.group);
       modelRef.current = loadedModel;
       activeModel = loadedModel;
