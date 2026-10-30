@@ -17,10 +17,10 @@ export function createFallbackGarment(): GarmentInstance {
   const group = new THREE.Group();
   group.name = "Garment_Fallback";
 
-  // Dimensions matching standard retail T-shirt
-  const shoulderDist = 0.4558;
-  const torsoH = 0.5234;
-  const collarH = 0.0836;
+  // Biacromial reference dimensions measured from shirt.glb
+  const shoulderDist = 0.3527;
+  const torsoH = 0.5712;
+  const collarH = 0.0360;
 
   // Manifold contour mesh
   const geom = new THREE.CylinderGeometry(
@@ -83,10 +83,10 @@ export async function loadGarmentModel(
           return;
         }
 
-        // Calibrated shoulder reference values measured from shirt.glb
-        const shoulderDistance = 0.4558;
-        const torsoHeight = 0.5234;
-        const collarOffset = 0.0836;
+        // Calibrated biacromial reference values measured from shirt.glb
+        const shoulderDistance = 0.3527;
+        const torsoHeight = 0.5712;
+        const collarOffset = 0.0360;
 
         // Clone geometry and material for clean standalone lifecycle
         const geometry = (shirtMesh as THREE.Mesh).geometry.clone();
@@ -104,9 +104,9 @@ export async function loadGarmentModel(
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
-        // Offset mesh so that (0, 0, 0) of parent group is EXACTLY the shoulder midpoint:
-        // Midpoint of shoulders in raw model coordinates: X = -0.0007, Y = 0.1714, Z = -0.0087
-        mesh.position.set(0.0007, -0.1714, 0.0087);
+        // Offset mesh so that (0, 0, 0) of parent group is EXACTLY the biacromial midpoint:
+        // Midpoint of acromion in raw model coordinates: X = 0.0013, Y = 0.2193, Z = -0.0226
+        mesh.position.set(-0.0013, -0.2193, 0.0226);
 
         const group = new THREE.Group();
         group.name = "Garment_Retail3D";

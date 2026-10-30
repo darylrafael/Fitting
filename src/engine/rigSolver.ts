@@ -124,8 +124,11 @@ export class RigSolver {
     if (sLH) this.toScreen(sLH, width, height, this.vLH);
     if (sRH) this.toScreen(sRH, width, height, this.vRH);
 
-    // 3. Compute Midpoints
+    // 3. Compute Midpoints & Anatomical Trapezius Anchor
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
+    // Lift anchor by 4% of shoulder width to align with natural trapezius shoulder drape
+    this.vMidShoulder.y += measuredShoulderDist * 0.04;
+
     if (hasHips) {
       this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
     }
