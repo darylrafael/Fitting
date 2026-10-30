@@ -18,7 +18,8 @@ export function createFallbackGarment(): GarmentInstance {
   group.name = "Garment_Fallback";
 
   // Biacromial reference dimensions measured from shirt.glb
-  const shoulderDist = 0.3527;
+  // 0.320 gives a natural retail fit with full deltoid coverage
+  const shoulderDist = 0.320;
   const torsoH = 0.5712;
   const collarH = 0.0360;
 
@@ -83,8 +84,9 @@ export async function loadGarmentModel(
           return;
         }
 
-        // Calibrated biacromial reference values measured from shirt.glb
-        const shoulderDistance = 0.3527;
+        // Calibrated reference values measured from shirt.glb
+        // 0.320 provides a tailored retail fit covering the lateral deltoids
+        const shoulderDistance = 0.320;
         const torsoHeight = 0.5712;
         const collarOffset = 0.0360;
 

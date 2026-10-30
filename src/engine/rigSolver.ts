@@ -107,8 +107,10 @@ export class RigSolver {
     const hasHips =
       rawLH &&
       rawRH &&
-      (rawLH.visibility ?? 0) >= minVis &&
-      (rawRH.visibility ?? 0) >= minVis;
+      rawLH.y < 0.85 &&
+      rawRH.y < 0.85 &&
+      (rawLH.visibility ?? 0) >= 0.65 &&
+      (rawRH.visibility ?? 0) >= 0.65;
 
     const sLH = hasHips
       ? this.filterLeftHip.filter(rawLH.x, rawLH.y, rawLH.z, timestamp)
@@ -130,10 +132,10 @@ export class RigSolver {
       return false;
     }
 
-    // 3. Compute Midpoints & Anatomical Trapezius Anchor
+    // 3. Compute Midpoints & Anatomical Suprasternal Anchor
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
-    // Lift anchor by 4% of shoulder width to align with natural trapezius shoulder drape
-    this.vMidShoulder.y += measuredShoulderDist * 0.04;
+    // Lift anchor by 10% of shoulder width to align collar with suprasternal notch
+    this.vMidShoulder.y += measuredShoulderDist * 0.10;
 
     if (hasHips) {
       this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
@@ -158,7 +160,7 @@ export class RigSolver {
     if (rawML && rawMR && (rawML.visibility ?? 0) > minVis && (rawMR.visibility ?? 0) > minVis) {
       const mouthY = (1.0 - (rawML.y + rawMR.y) * 0.5) * height;
       const expectedCollarY = this.vMidShoulder.y + scaleY * model.collarOffset;
-      const maxCollarY = mouthY - 14; // keep at least 14px below mouth center
+      const maxCollarY = mouthY - 18; // keep at least 18px below mouth center
       if (expectedCollarY > maxCollarY) {
         // Shift anchor slightly down so collar stays strictly at neck level
         this.vMidShoulder.y -= (expectedCollarY - maxCollarY);
@@ -175,13 +177,13 @@ export class RigSolver {
     const dz = (this.vRS.z - this.vLS.z) / Math.max(measuredShoulderDist, 1.0);
     const yaw = Math.asin(Math.max(-0.85, Math.min(0.85, dz)));
 
-    // Pitch: Torso forward/backward lean
-    let pitch = 0.05; // slight natural chest slope
+    // Pitch: Torso forward/backward lean (naturally upright in front of screen)
+    let pitch = 0.02; // slight natural chest posture (~1.1 deg)
     if (hasHips) {
       const spineDY = this.vMidShoulder.y - this.vMidHip.y;
       const spineDZ = this.vMidShoulder.z - this.vMidHip.z;
       pitch = Math.atan2(spineDZ, Math.max(spineDY, 1.0));
-      pitch = Math.max(-0.35, Math.min(0.40, pitch)); // clamp to natural range
+      pitch = Math.max(-0.08, Math.min(0.12, pitch)); // clamp to realistic upper body range
     }
 
     this.targetEuler.set(pitch, yaw, roll, "YXZ");
