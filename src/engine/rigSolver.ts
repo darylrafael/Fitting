@@ -1,52 +1,53 @@
 import * as THREE from "three";
 import { Landmark } from "../types/pose";
 import { OneEuroFilter3D, Point3D } from "../utils/oneEuroFilter";
-import { TShirtArchetypeModel } from "./tshirtArchetype";
+import { GarmentInstance } from "./garmentModel";
 
 export class RigSolver {
+  // OneEuroFilters for smooth, jitter-free joint tracking
   private filterLeftShoulder = new OneEuroFilter3D(1.2, 0.007);
   private filterRightShoulder = new OneEuroFilter3D(1.2, 0.007);
-  private filterLeftElbow = new OneEuroFilter3D(1.2, 0.007);
-  private filterRightElbow = new OneEuroFilter3D(1.2, 0.007);
   private filterLeftHip = new OneEuroFilter3D(1.2, 0.007);
   private filterRightHip = new OneEuroFilter3D(1.2, 0.007);
+  private filterNose = new OneEuroFilter3D(1.2, 0.007);
 
-  // Cached calculation vectors to avoid per-frame GC allocations
+  // Cached Three.js vectors for GC-free 60 FPS loop
   private vLS = new THREE.Vector3();
   private vRS = new THREE.Vector3();
-  private vLE = new THREE.Vector3();
-  private vRE = new THREE.Vector3();
   private vLH = new THREE.Vector3();
   private vRH = new THREE.Vector3();
-
+  private vNose = new THREE.Vector3();
   private vMidShoulder = new THREE.Vector3();
   private vMidHip = new THREE.Vector3();
-  private vShoulderDir = new THREE.Vector3();
-  private vSpineDir = new THREE.Vector3();
-  private vForward = new THREE.Vector3();
 
-  private rotMatrix = new THREE.Matrix4();
-  private qTorso = new THREE.Quaternion();
-  private qTorsoInv = new THREE.Quaternion();
+  private targetScale = new THREE.Vector3();
+  private targetEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  private targetQuaternion = new THREE.Quaternion();
 
-  private vArmWorld = new THREE.Vector3();
-  private vArmLocal = new THREE.Vector3();
-  private vDown = new THREE.Vector3(0, -1, 0);
-  private qSleeve = new THREE.Quaternion();
+  private isInitialized = false;
+
+  public reset(): void {
+    this.filterLeftShoulder.reset();
+    this.filterRightShoulder.reset();
+    this.filterLeftHip.reset();
+    this.filterRightHip.reset();
+    this.filterNose.reset();
+    this.isInitialized = false;
+  }
 
   private toScreen(pt: Point3D, width: number, height: number): THREE.Vector3 {
     // MediaPipe normalized coordinates:
-    // x in [0, 1] (left to right)
+    // x in [0, 1] (left to right in unmirrored frame)
     // y in [0, 1] (top to bottom)
-    // z roughly relative depth
+    // z relative depth (negative = closer to camera)
     const sx = pt.x * width;
     const sy = (1.0 - pt.y) * height; // Invert Y because Three.js +Y is UP
-    const sz = -pt.z * width * 0.75;  // Depth scaled to pixel units
+    const sz = -pt.z * width * 0.75;  // Negative pt.z maps to positive Three.js Z (closer to camera)
     return new THREE.Vector3(sx, sy, sz);
   }
 
   update(
-    model: TShirtArchetypeModel,
+    model: GarmentInstance,
     landmarks: Landmark[] | null,
     width: number,
     height: number,
@@ -58,18 +59,18 @@ export class RigSolver {
     }
 
     // MediaPipe landmarks:
+    // 0: nose
     // 11: left_shoulder, 12: right_shoulder
-    // 13: left_elbow, 14: right_elbow
     // 23: left_hip, 24: right_hip
+    const rawNose = landmarks[0];
     const rawLS = landmarks[11];
     const rawRS = landmarks[12];
-    const rawLE = landmarks[13];
-    const rawRE = landmarks[14];
     const rawLH = landmarks[23];
     const rawRH = landmarks[24];
 
     const minVis = 0.45;
     if (
+      !rawLS || !rawRS ||
       (rawLS.visibility ?? 1) < minVis ||
       (rawRS.visibility ?? 1) < minVis
     ) {
@@ -77,85 +78,95 @@ export class RigSolver {
       return false;
     }
 
-    // 1. OneEuroFilter Landmark Smoothing
+    // 1. OneEuroFilter Smoothing
     const sLS = this.filterLeftShoulder.filter(rawLS.x, rawLS.y, rawLS.z, timestamp);
     const sRS = this.filterRightShoulder.filter(rawRS.x, rawRS.y, rawRS.z, timestamp);
-    const sLE = this.filterLeftElbow.filter(rawLE.x, rawLE.y, rawLE.z, timestamp);
-    const sRE = this.filterRightElbow.filter(rawRE.x, rawRE.y, rawRE.z, timestamp);
-    const sLH = this.filterLeftHip.filter(rawLH.x, rawLH.y, rawLH.z, timestamp);
-    const sRH = this.filterRightHip.filter(rawRH.x, rawRH.y, rawRH.z, timestamp);
+    const sNose = rawNose
+      ? this.filterNose.filter(rawNose.x, rawNose.y, rawNose.z, timestamp)
+      : null;
 
-    // 2. Convert to Three.js Screen-Space Coordinates
+    const hasHips =
+      rawLH &&
+      rawRH &&
+      (rawLH.visibility ?? 0) >= minVis &&
+      (rawRH.visibility ?? 0) >= minVis;
+
+    const sLH = hasHips
+      ? this.filterLeftHip.filter(rawLH.x, rawLH.y, rawLH.z, timestamp)
+      : null;
+    const sRH = hasHips
+      ? this.filterRightHip.filter(rawRH.x, rawRH.y, rawRH.z, timestamp)
+      : null;
+
+    // 2. Convert to Screen-Space
     this.vLS.copy(this.toScreen(sLS, width, height));
     this.vRS.copy(this.toScreen(sRS, width, height));
-    this.vLE.copy(this.toScreen(sLE, width, height));
-    this.vRE.copy(this.toScreen(sRE, width, height));
-    this.vLH.copy(this.toScreen(sLH, width, height));
-    this.vRH.copy(this.toScreen(sRH, width, height));
+    if (sNose) this.vNose.copy(this.toScreen(sNose, width, height));
+    if (sLH) this.vLH.copy(this.toScreen(sLH, width, height));
+    if (sRH) this.vRH.copy(this.toScreen(sRH, width, height));
 
     // 3. Compute Midpoints
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
-    this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
-
-    // 4. Position Garment Group at Mid-Shoulder
-    model.group.position.lerp(this.vMidShoulder, 0.45);
-
-    // 5. Scale Garment to User Body Proportions
-    // Reference half-width W = 90 (full width = 180)
-    // Reference height H = 220
-    const measuredShoulderWidth = this.vLS.distanceTo(this.vRS);
-    const measuredTorsoHeight = this.vMidShoulder.distanceTo(this.vMidHip);
-
-    if (measuredShoulderWidth > 10 && measuredTorsoHeight > 10) {
-      const targetScaleX = measuredShoulderWidth / 180;
-      const targetScaleY = (measuredTorsoHeight * 1.18) / 220; // Extends slightly past belt line
-      const targetScaleZ = (targetScaleX + targetScaleY) * 0.5;
-
-      model.group.scale.set(
-        THREE.MathUtils.lerp(model.group.scale.x, targetScaleX, 0.35),
-        THREE.MathUtils.lerp(model.group.scale.y, targetScaleY, 0.35),
-        THREE.MathUtils.lerp(model.group.scale.z, targetScaleZ, 0.35)
-      );
+    if (hasHips) {
+      this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
     }
 
-    // 6. Torso 3D Orientation (Yaw, Pitch, Roll)
-    // Left-to-right vector along shoulders:
-    this.vShoulderDir.subVectors(this.vRS, this.vLS).normalize();
-    // Spine vector pointing up:
-    this.vSpineDir.subVectors(this.vMidShoulder, this.vMidHip).normalize();
-    // Forward normal perpendicular to chest:
-    this.vForward.crossVectors(this.vShoulderDir, this.vSpineDir).normalize();
+    // 4. Biomechanical Scale Computation
+    const measuredShoulderDist = this.vLS.distanceTo(this.vRS);
+    if (measuredShoulderDist < 10) {
+      model.group.visible = false;
+      return false;
+    }
 
-    // Orthonormal basis matrix:
-    this.rotMatrix.makeBasis(this.vShoulderDir, this.vSpineDir, this.vForward);
-    this.qTorso.setFromRotationMatrix(this.rotMatrix);
-    model.group.quaternion.slerp(this.qTorso, 0.4);
+    const scaleX = measuredShoulderDist / model.shoulderDistance;
+    let scaleY = scaleX;
 
-    // 7. Dynamic Sleeve Articulation (in Local Group Space)
-    this.qTorsoInv.copy(model.group.quaternion).invert();
+    if (hasHips) {
+      const measuredTorsoHeight = this.vMidShoulder.distanceTo(this.vMidHip);
+      scaleY = (measuredTorsoHeight * 1.15) / model.torsoHeight;
+    } else {
+      // Seated fallback: natural anatomical ratio (torso ~1.05-1.10x shoulder breadth)
+      scaleY = scaleX * 1.08;
+    }
 
-    // Left Arm
-    this.vArmWorld.subVectors(this.vLE, this.vLS).normalize();
-    this.vArmLocal.copy(this.vArmWorld).applyQuaternion(this.qTorsoInv).normalize();
-    this.qSleeve.setFromUnitVectors(this.vDown, this.vArmLocal);
-    model.leftSleevePivot.quaternion.slerp(this.qSleeve, 0.4);
+    const scaleZ = (scaleX + scaleY) * 0.5;
+    this.targetScale.set(scaleX, scaleY, scaleZ);
 
-    // Right Arm
-    this.vArmWorld.subVectors(this.vRE, this.vRS).normalize();
-    this.vArmLocal.copy(this.vArmWorld).applyQuaternion(this.qTorsoInv).normalize();
-    this.qSleeve.setFromUnitVectors(this.vDown, this.vArmLocal);
-    model.rightSleevePivot.quaternion.slerp(this.qSleeve, 0.4);
+    // 5. Biomechanical Orientation (Euler 'YXZ' to prevent gimbal lock)
+    // Roll: In-plane shoulder angle
+    const dx = this.vLS.x - this.vRS.x;
+    const dy = this.vLS.y - this.vRS.y;
+    const roll = Math.atan2(dy, dx);
+
+    // Yaw: Left-right depth disparity (Right Shoulder Z minus Left Shoulder Z)
+    const dz = (this.vRS.z - this.vLS.z) / Math.max(measuredShoulderDist, 1.0);
+    const yaw = Math.asin(Math.max(-0.85, Math.min(0.85, dz)));
+
+    // Pitch: Torso forward/backward lean
+    let pitch = 0.05; // slight natural chest slope
+    if (hasHips) {
+      const spineDY = this.vMidShoulder.y - this.vMidHip.y;
+      const spineDZ = this.vMidShoulder.z - this.vMidHip.z;
+      pitch = Math.atan2(spineDZ, Math.max(spineDY, 1.0));
+      pitch = Math.max(-0.35, Math.min(0.40, pitch)); // clamp to natural range
+    }
+
+    this.targetEuler.set(pitch, yaw, roll, "YXZ");
+    this.targetQuaternion.setFromEuler(this.targetEuler);
+
+    // 6. Smooth Apply
+    if (!this.isInitialized) {
+      model.group.position.copy(this.vMidShoulder);
+      model.group.scale.copy(this.targetScale);
+      model.group.quaternion.copy(this.targetQuaternion);
+      this.isInitialized = true;
+    } else {
+      model.group.position.lerp(this.vMidShoulder, 0.45);
+      model.group.scale.lerp(this.targetScale, 0.35);
+      model.group.quaternion.slerp(this.targetQuaternion, 0.40);
+    }
 
     model.group.visible = true;
     return true;
-  }
-
-  reset() {
-    this.filterLeftShoulder.reset();
-    this.filterRightShoulder.reset();
-    this.filterLeftElbow.reset();
-    this.filterRightElbow.reset();
-    this.filterLeftHip.reset();
-    this.filterRightHip.reset();
   }
 }

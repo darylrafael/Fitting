@@ -4,9 +4,10 @@ import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Landmark } from "../types/pose";
 import {
-  createRetailTShirtArchetype,
-  TShirtArchetypeModel,
-} from "../engine/tshirtArchetype";
+  GarmentInstance,
+  loadGarmentModel,
+  createFallbackGarment,
+} from "../engine/garmentModel";
 import { RigSolver } from "../engine/rigSolver";
 
 interface ThreeCanvasProps {
@@ -28,7 +29,7 @@ export function ThreeCanvas({
 }: ThreeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const modelRef = useRef<TShirtArchetypeModel | null>(null);
+  const modelRef = useRef<GarmentInstance | null>(null);
   const solverRef = useRef<RigSolver>(new RigSolver());
   const landmarksRef = useRef<Landmark[] | null>(landmarks);
   const animFrameIdRef = useRef<number | null>(null);
@@ -40,7 +41,7 @@ export function ThreeCanvas({
     if (!canvas || width <= 0 || height <= 0) return;
 
     // 1. Scene & Calibrated 1:1 Orthographic Camera
-    // Maps screen pixels [0..width, 0..height] directly to Three.js space
+    // Maps screen pixels [0..width, 0..height] directly to Three.js world units
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(0, width, height, 0, -1000, 1000);
     camera.position.set(0, 0, 500);
@@ -63,17 +64,44 @@ export function ThreeCanvas({
     scene.add(ambientLight);
 
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    keyLight.position.set(width * 0.3, height * 0.8, 400);
+    keyLight.position.set(width * 0.35, height * 0.85, 450);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x94a3b8, 1.1);
-    fillLight.position.set(-width * 0.3, height * 0.2, 300);
+    const fillLight = new THREE.DirectionalLight(0x94a3b8, 1.2);
+    fillLight.position.set(-width * 0.3, height * 0.25, 350);
     scene.add(fillLight);
 
-    // 4. Create Tailored T-Shirt Archetype
-    const model = createRetailTShirtArchetype();
-    scene.add(model.group);
-    modelRef.current = model;
+    const rimLight = new THREE.DirectionalLight(0xfef08a, 0.5);
+    rimLight.position.set(0, -height * 0.2, -300);
+    scene.add(rimLight);
+
+    // 4. Mount initial fallback garment while GLTF asset loads
+    let activeModel = createFallbackGarment();
+    activeModel.material.color.set(garmentColor);
+    activeModel.material.wireframe = isWireframe;
+    scene.add(activeModel.group);
+    modelRef.current = activeModel;
+
+    // Asynchronously load the retail 3D T-shirt model
+    let isDisposed = false;
+    loadGarmentModel("/models/shirt.glb").then((loadedModel) => {
+      if (isDisposed) {
+        loadedModel.group.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+        });
+        return;
+      }
+      scene.remove(activeModel.group);
+      activeModel.group.traverse((c) => {
+        if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+      });
+
+      loadedModel.material.color.set(garmentColor);
+      loadedModel.material.wireframe = isWireframe;
+      scene.add(loadedModel.group);
+      modelRef.current = loadedModel;
+      activeModel = loadedModel;
+    });
 
     // 5. Render Loop (Synchronized at 60 FPS)
     const renderLoop = (timestamp: number) => {
@@ -98,6 +126,7 @@ export function ThreeCanvas({
     animFrameIdRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
+      isDisposed = true;
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current);
       }

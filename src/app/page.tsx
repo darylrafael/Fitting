@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { usePoseTracker } from "../hooks/usePoseTracker";
 import { PerformanceHUD } from "../components/PerformanceHUD";
-import { SkeletonCanvas } from "../components/SkeletonCanvas";
-import { ThreeCanvas } from "../components/ThreeCanvas";
+
+const ThreeCanvas = dynamic(
+  () => import("../components/ThreeCanvas").then((mod) => mod.ThreeCanvas),
+  { ssr: false }
+);
+
+const SkeletonCanvas = dynamic(
+  () => import("../components/SkeletonCanvas").then((mod) => mod.SkeletonCanvas),
+  { ssr: false }
+);
 import {
   Camera,
   ShieldCheck,
