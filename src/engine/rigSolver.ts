@@ -124,6 +124,12 @@ export class RigSolver {
     if (sLH) this.toScreen(sLH, width, height, this.vLH);
     if (sRH) this.toScreen(sRH, width, height, this.vRH);
 
+    const measuredShoulderDist = this.vLS.distanceTo(this.vRS);
+    if (measuredShoulderDist < 10) {
+      model.group.visible = false;
+      return false;
+    }
+
     // 3. Compute Midpoints & Anatomical Trapezius Anchor
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
     // Lift anchor by 4% of shoulder width to align with natural trapezius shoulder drape
@@ -134,12 +140,6 @@ export class RigSolver {
     }
 
     // 4. Biomechanical Scale Computation
-    const measuredShoulderDist = this.vLS.distanceTo(this.vRS);
-    if (measuredShoulderDist < 10) {
-      model.group.visible = false;
-      return false;
-    }
-
     const scaleX = measuredShoulderDist / model.shoulderDistance;
     let scaleY = scaleX;
 

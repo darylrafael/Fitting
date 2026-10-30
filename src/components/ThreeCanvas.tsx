@@ -109,23 +109,26 @@ export function ThreeCanvas({
       activeModel = loadedModel;
     });
 
-    // 5. Render Loop (Synchronized at 60 FPS)
+    // 5. Render Loop (Synchronized at 60 FPS) with error containment
     const renderLoop = (timestamp: number) => {
-      if (modelRef.current) {
-        if (showGarment) {
-          solverRef.current.update(
-            modelRef.current,
-            landmarksRef.current,
-            width,
-            height,
-            timestamp
-          );
-        } else {
-          modelRef.current.group.visible = false;
+      try {
+        if (modelRef.current) {
+          if (showGarment) {
+            solverRef.current.update(
+              modelRef.current,
+              landmarksRef.current,
+              width,
+              height,
+              timestamp
+            );
+          } else {
+            modelRef.current.group.visible = false;
+          }
         }
+        renderer.render(scene, camera);
+      } catch (err) {
+        console.error("[Fitting] Render loop frame error:", err);
       }
-
-      renderer.render(scene, camera);
       animFrameIdRef.current = requestAnimationFrame(renderLoop);
     };
 
