@@ -24,9 +24,6 @@ export class RigSolver {
   private targetEuler = new THREE.Euler(0, 0, 0, "YXZ");
   private targetQuaternion = new THREE.Quaternion();
 
-  private vZPositive = new THREE.Vector3(0, 0, 1);
-  private localClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
-
   private isInitialized = false;
   private lostTrackingFrames = 0;
   private readonly maxLostTrackingFrames = 6;
@@ -135,10 +132,11 @@ export class RigSolver {
       return false;
     }
 
-    // 3. Compute Midpoints & Anatomical Suprasternal Anchor
+    // 3. Compute Midpoints & Anatomical Shoulder Crest Anchor
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
-    // Lift anchor by 22% of shoulder width to drape over trapezius crest and frame neck base
-    this.vMidShoulder.y += measuredShoulderDist * 0.22;
+    // Lift anchor by 8% of shoulder span to align shoulder crest with trapezius slope
+    // (glenohumeral joints sit ~2cm below the acromion crest)
+    this.vMidShoulder.y += measuredShoulderDist * 0.08;
 
     if (hasHips) {
       this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
@@ -152,23 +150,12 @@ export class RigSolver {
       const measuredTorsoHeight = this.vMidShoulder.distanceTo(this.vMidHip);
       scaleY = (measuredTorsoHeight * 1.15) / model.torsoHeight;
     } else {
-      // Seated fallback: natural anatomical ratio (torso ~1.05-1.10x shoulder breadth)
+      // Seated fallback: natural anatomical ratio (torso ~1.08x shoulder breadth)
       scaleY = scaleX * 1.08;
     }
 
     const scaleZ = (scaleX + scaleY) * 0.5;
     this.targetScale.set(scaleX, scaleY, scaleZ);
-
-    // 4b. Chin Occlusion Guard: Ensure collar never extends over the user's chin/mouth
-    if (rawML && rawMR && (rawML.visibility ?? 0) > minVis && (rawMR.visibility ?? 0) > minVis) {
-      const mouthY = (1.0 - (rawML.y + rawMR.y) * 0.5) * height;
-      const expectedCollarY = this.vMidShoulder.y + scaleY * model.collarOffset;
-      const maxCollarY = mouthY - 18; // keep at least 18px below mouth center
-      if (expectedCollarY > maxCollarY) {
-        // Shift anchor slightly down so collar stays strictly at neck level
-        this.vMidShoulder.y -= (expectedCollarY - maxCollarY);
-      }
-    }
 
     // 5. Biomechanical Orientation (Euler 'YXZ' to prevent gimbal lock)
     // Roll: In-plane shoulder angle
@@ -178,7 +165,7 @@ export class RigSolver {
 
     // Yaw: Left-right depth disparity (Right Shoulder Z minus Left Shoulder Z)
     const dz = (this.vRS.z - this.vLS.z) / Math.max(measuredShoulderDist, 1.0);
-    const yaw = Math.asin(Math.max(-0.85, Math.min(0.85, dz)));
+    const yaw = Math.asin(Math.max(-0.75, Math.min(0.75, dz)));
 
     // Pitch: Torso forward/backward lean (naturally upright in front of screen)
     let pitch = 0.02; // slight natural chest posture (~1.1 deg)
@@ -192,6 +179,28 @@ export class RigSolver {
     this.targetEuler.set(pitch, yaw, roll, "YXZ");
     this.targetQuaternion.setFromEuler(this.targetEuler);
 
+    // 5b. Dynamic Jaw & Chin Clearance Guard:
+    // Prevents collar rim from overlapping the user's chin, jawline, or mouth during head motion or shoulder tilt
+    if (rawNose && (rawNose.visibility ?? 0) > minVis) {
+      const noseY = (1.0 - rawNose.y) * height;
+      let chinY = noseY - Math.max(35, measuredShoulderDist * 0.22);
+      if (rawML && rawMR && (rawML.visibility ?? 0) > minVis && (rawMR.visibility ?? 0) > minVis) {
+        const mouthY = (1.0 - (rawML.y + rawMR.y) * 0.5) * height;
+        chinY = Math.min(chinY, mouthY - Math.max(16, measuredShoulderDist * 0.08));
+      }
+
+      // Collar top elevation accounting for shoulder tilt (roll)
+      const collarTopY =
+        this.vMidShoulder.y +
+        scaleY * model.collarOffset +
+        Math.abs(Math.sin(roll)) * (scaleX * 0.105);
+
+      const minClearance = 8; // ensure at least 8px visual clearance below chin
+      if (collarTopY > chinY - minClearance) {
+        this.vMidShoulder.y -= (collarTopY - (chinY - minClearance));
+      }
+    }
+
     // 6. Smooth Apply
     if (!this.isInitialized) {
       model.group.position.copy(this.vMidShoulder);
@@ -204,12 +213,7 @@ export class RigSolver {
       model.group.quaternion.slerp(this.targetQuaternion, 0.40);
     }
 
-    // 7. Dynamic Back-Panel Culling (clips interior back wall to expose real webcam neck)
-    if (model.clipPlane) {
-      this.localClipPlane.set(this.vZPositive, 0.01);
-      model.clipPlane.copy(this.localClipPlane).applyMatrix4(model.group.matrixWorld);
-    }
-
+    model.group.updateMatrixWorld(true);
     model.group.visible = true;
     return true;
   }

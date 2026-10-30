@@ -5,10 +5,33 @@ export interface GarmentInstance {
   group: THREE.Group;
   mesh: THREE.Mesh;
   material: THREE.MeshStandardMaterial;
-  shoulderDistance: number; // reference shoulder seam distance in model units
+  shoulderDistance: number; // reference shoulder crest span in model units
   torsoHeight: number;      // reference shoulder-to-hem height in model units
   collarOffset: number;     // reference shoulder-to-collar height in model units
-  clipPlane: THREE.Plane;   // dynamic back-culling plane to expose real neck & throat
+  occluderMesh?: THREE.Mesh; // anatomical depth occluder to expose real webcam neck
+}
+
+/**
+ * Creates an anatomical neck occluder mesh.
+ * Renders into the WebGL depth buffer only (colorWrite: false, depthWrite: true)
+ * at renderOrder = 0. This naturally occludes the inside back wall of the garment
+ * behind the user's real neck while keeping the canvas 100% transparent for the webcam video,
+ * without slicing or clipping the shoulders and sleeves.
+ */
+function createNeckOccluder(): THREE.Mesh {
+  const geom = new THREE.CylinderGeometry(0.065, 0.075, 0.22, 24, 1);
+  // Center along the anatomical neck column above shoulder crest midpoint
+  geom.translate(0, 0.07, 0.005);
+
+  const mat = new THREE.MeshBasicMaterial({
+    colorWrite: false,
+    depthWrite: true,
+  });
+
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = "AnatomicalNeckOccluder";
+  mesh.renderOrder = 0;
+  return mesh;
 }
 
 /**
@@ -18,11 +41,10 @@ export function createFallbackGarment(): GarmentInstance {
   const group = new THREE.Group();
   group.name = "Garment_Fallback";
 
-  // Biacromial reference dimensions measured from shirt.glb
-  // 0.320 gives a natural retail fit with full deltoid coverage
-  const shoulderDist = 0.320;
-  const torsoH = 0.5712;
-  const collarH = 0.0360;
+  // Calibrated reference dimensions matching shirt.glb
+  const shoulderDist = 0.307;
+  const torsoH = 0.582;
+  const collarH = 0.027;
 
   // Manifold contour mesh
   const geom = new THREE.CylinderGeometry(
@@ -33,24 +55,24 @@ export function createFallbackGarment(): GarmentInstance {
     16,
     true
   );
-  // Flatten slightly front-to-back
   geom.scale(1.0, 1.0, 0.45);
-  // Shift so top is at collar line and center is at shoulder midpoint
   geom.translate(0, -torsoH * 0.5, 0);
-
-  const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
 
   const material = new THREE.MeshStandardMaterial({
     color: 0x27272a,
     roughness: 0.85,
     metalness: 0.05,
     side: THREE.DoubleSide,
-    clippingPlanes: [clipPlane],
-    clipShadows: true,
+    depthTest: true,
+    depthWrite: true,
   });
 
   const mesh = new THREE.Mesh(geom, material);
+  mesh.renderOrder = 1;
   group.add(mesh);
+
+  const occluderMesh = createNeckOccluder();
+  group.add(occluderMesh);
 
   return {
     group,
@@ -59,13 +81,13 @@ export function createFallbackGarment(): GarmentInstance {
     shoulderDistance: shoulderDist,
     torsoHeight: torsoH,
     collarOffset: collarH,
-    clipPlane,
+    occluderMesh,
   };
 }
 
 /**
  * Loads the retail 3D T-shirt model from GLB asset.
- * Calibrates origin to the midpoint between the shoulder seams.
+ * Calibrates origin to the midpoint between the shoulder crest seams.
  */
 export async function loadGarmentModel(
   url = "/models/shirt.glb"
@@ -90,38 +112,45 @@ export async function loadGarmentModel(
           return;
         }
 
-        // Calibrated reference values measured from shirt.glb
-        // 0.320 provides a tailored retail fit covering the lateral deltoids
-        const shoulderDistance = 0.320;
-        const torsoHeight = 0.5712;
-        const collarOffset = 0.0360;
+        // Rigorously measured anatomical dimensions of shirt.glb:
+        // - Shoulder crest span (left to right seam): 0.3066
+        // - Torso height (shoulder crest to hem): 0.5816
+        // - Collar back offset above shoulder crest: 0.0268
+        const shoulderDistance = 0.307;
+        const torsoHeight = 0.582;
+        const collarOffset = 0.027;
 
-        // Clone geometry and material for clean standalone lifecycle
+        // Clone geometry and compute clean vertex normals
         const geometry = (shirtMesh as THREE.Mesh).geometry.clone();
         geometry.computeVertexNormals();
-
-        const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
 
         const material = new THREE.MeshStandardMaterial({
           color: 0x27272a,
           roughness: 0.85,
           metalness: 0.04,
           side: THREE.DoubleSide,
-          clippingPlanes: [clipPlane],
-          clipShadows: true,
+          depthTest: true,
+          depthWrite: true,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.name = "RetailTShirtMesh";
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        mesh.renderOrder = 1;
 
-        // Offset mesh so that (0, 0, 0) of parent group is EXACTLY the biacromial midpoint:
-        // Midpoint of acromion in raw model coordinates: X = 0.0013, Y = 0.2193, Z = -0.0226
-        mesh.position.set(-0.0013, -0.2193, 0.0226);
+        // Offset mesh so that (0, 0, 0) of parent group is EXACTLY the Shoulder Crest Midpoint:
+        // X = -0.0018, Y = -0.2297, Z = 0.0238
+        mesh.position.set(-0.0018, -0.2297, 0.0238);
 
         const group = new THREE.Group();
         group.name = "Garment_Retail3D";
+
+        // Add anatomical neck occluder first (renderOrder = 0)
+        const occluderMesh = createNeckOccluder();
+        group.add(occluderMesh);
+
+        // Add retail t-shirt mesh (renderOrder = 1)
         group.add(mesh);
 
         resolve({
@@ -131,7 +160,7 @@ export async function loadGarmentModel(
           shoulderDistance,
           torsoHeight,
           collarOffset,
-          clipPlane,
+          occluderMesh,
         });
       },
       undefined,
