@@ -35,7 +35,12 @@ export class RigSolver {
     this.isInitialized = false;
   }
 
-  private toScreen(pt: Point3D, width: number, height: number): THREE.Vector3 {
+  private toScreen(
+    pt: Point3D,
+    width: number,
+    height: number,
+    target: THREE.Vector3
+  ): void {
     // MediaPipe normalized coordinates:
     // x in [0, 1] (left to right in unmirrored frame)
     // y in [0, 1] (top to bottom)
@@ -43,7 +48,7 @@ export class RigSolver {
     const sx = pt.x * width;
     const sy = (1.0 - pt.y) * height; // Invert Y because Three.js +Y is UP
     const sz = -pt.z * width * 0.75;  // Negative pt.z maps to positive Three.js Z (closer to camera)
-    return new THREE.Vector3(sx, sy, sz);
+    target.set(sx, sy, sz);
   }
 
   update(
@@ -59,10 +64,12 @@ export class RigSolver {
     }
 
     // MediaPipe landmarks:
-    // 0: nose
+    // 0: nose, 9: mouth_left, 10: mouth_right
     // 11: left_shoulder, 12: right_shoulder
     // 23: left_hip, 24: right_hip
     const rawNose = landmarks[0];
+    const rawML = landmarks[9];
+    const rawMR = landmarks[10];
     const rawLS = landmarks[11];
     const rawRS = landmarks[12];
     const rawLH = landmarks[23];
@@ -98,12 +105,12 @@ export class RigSolver {
       ? this.filterRightHip.filter(rawRH.x, rawRH.y, rawRH.z, timestamp)
       : null;
 
-    // 2. Convert to Screen-Space
-    this.vLS.copy(this.toScreen(sLS, width, height));
-    this.vRS.copy(this.toScreen(sRS, width, height));
-    if (sNose) this.vNose.copy(this.toScreen(sNose, width, height));
-    if (sLH) this.vLH.copy(this.toScreen(sLH, width, height));
-    if (sRH) this.vRH.copy(this.toScreen(sRH, width, height));
+    // 2. Convert to Screen-Space (in-place zero allocation)
+    this.toScreen(sLS, width, height, this.vLS);
+    this.toScreen(sRS, width, height, this.vRS);
+    if (sNose) this.toScreen(sNose, width, height, this.vNose);
+    if (sLH) this.toScreen(sLH, width, height, this.vLH);
+    if (sRH) this.toScreen(sRH, width, height, this.vRH);
 
     // 3. Compute Midpoints
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
@@ -131,6 +138,17 @@ export class RigSolver {
 
     const scaleZ = (scaleX + scaleY) * 0.5;
     this.targetScale.set(scaleX, scaleY, scaleZ);
+
+    // 4b. Chin Occlusion Guard: Ensure collar never extends over the user's chin/mouth
+    if (rawML && rawMR && (rawML.visibility ?? 0) > minVis && (rawMR.visibility ?? 0) > minVis) {
+      const mouthY = (1.0 - (rawML.y + rawMR.y) * 0.5) * height;
+      const expectedCollarY = this.vMidShoulder.y + scaleY * model.collarOffset;
+      const maxCollarY = mouthY - 14; // keep at least 14px below mouth center
+      if (expectedCollarY > maxCollarY) {
+        // Shift anchor slightly down so collar stays strictly at neck level
+        this.vMidShoulder.y -= (expectedCollarY - maxCollarY);
+      }
+    }
 
     // 5. Biomechanical Orientation (Euler 'YXZ' to prevent gimbal lock)
     // Roll: In-plane shoulder angle

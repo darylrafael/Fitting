@@ -133,9 +133,9 @@ export default function BenchmarkPage() {
           playsInline
           muted
           autoPlay
-          className={`w-full h-full object-cover -scale-x-100 transition-opacity duration-300 ${
-            hasStarted ? "opacity-100" : "opacity-0"
-          }`}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${
+            cameraFacing === "user" ? "-scale-x-100" : ""
+          } ${hasStarted ? "opacity-100" : "opacity-0"}`}
         />
 
         {/* 3D WebGL Garment Layer (Spike S3) */}
@@ -144,6 +144,7 @@ export default function BenchmarkPage() {
             landmarks={landmarks}
             width={dimensions.width}
             height={dimensions.height}
+            cameraFacing={cameraFacing}
             showGarment={showGarment}
             isWireframe={isWireframe}
             garmentColor={selectedColor}
@@ -156,6 +157,7 @@ export default function BenchmarkPage() {
             landmarks={landmarks}
             width={dimensions.width}
             height={dimensions.height}
+            cameraFacing={cameraFacing}
           />
         )}
 

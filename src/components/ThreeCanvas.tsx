@@ -14,6 +14,7 @@ interface ThreeCanvasProps {
   landmarks: Landmark[] | null;
   width: number;
   height: number;
+  cameraFacing?: "user" | "environment";
   showGarment?: boolean;
   isWireframe?: boolean;
   garmentColor?: string;
@@ -23,6 +24,7 @@ export function ThreeCanvas({
   landmarks,
   width,
   height,
+  cameraFacing = "user",
   showGarment = true,
   isWireframe = false,
   garmentColor = "#27272a",
@@ -151,7 +153,9 @@ export function ThreeCanvas({
       ref={canvasRef}
       width={width}
       height={height}
-      className="absolute inset-0 pointer-events-none z-15 w-full h-full object-cover -scale-x-100"
+      className={`absolute inset-0 pointer-events-none z-15 w-full h-full object-cover ${
+        cameraFacing === "user" ? "-scale-x-100" : ""
+      }`}
     />
   );
 }

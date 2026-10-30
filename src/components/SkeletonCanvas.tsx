@@ -5,6 +5,7 @@ interface SkeletonCanvasProps {
   landmarks: Landmark[] | null;
   width: number;
   height: number;
+  cameraFacing?: "user" | "environment";
 }
 
 // MediaPipe 33-point Pose upper body & torso connections
@@ -24,7 +25,12 @@ const CONNECTIONS: [number, number][] = [
   [16, 18], [16, 20], [16, 22], // right hand fingers
 ];
 
-export function SkeletonCanvas({ landmarks, width, height }: SkeletonCanvasProps) {
+export function SkeletonCanvas({
+  landmarks,
+  width,
+  height,
+  cameraFacing = "user",
+}: SkeletonCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -75,7 +81,9 @@ export function SkeletonCanvas({ landmarks, width, height }: SkeletonCanvasProps
       ref={canvasRef}
       width={width}
       height={height}
-      className="absolute inset-0 pointer-events-none z-10 w-full h-full object-cover -scale-x-100"
+      className={`absolute inset-0 pointer-events-none z-10 w-full h-full object-cover ${
+        cameraFacing === "user" ? "-scale-x-100" : ""
+      }`}
     />
   );
 }
