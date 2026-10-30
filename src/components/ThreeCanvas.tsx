@@ -63,6 +63,7 @@ export function ThreeCanvas({
     renderer.setSize(width, height, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.localClippingEnabled = true;
     rendererRef.current = renderer;
 
     // 3. Studio Lighting Rig

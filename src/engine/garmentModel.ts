@@ -8,6 +8,7 @@ export interface GarmentInstance {
   shoulderDistance: number; // reference shoulder seam distance in model units
   torsoHeight: number;      // reference shoulder-to-hem height in model units
   collarOffset: number;     // reference shoulder-to-collar height in model units
+  clipPlane: THREE.Plane;   // dynamic back-culling plane to expose real neck & throat
 }
 
 /**
@@ -37,11 +38,15 @@ export function createFallbackGarment(): GarmentInstance {
   // Shift so top is at collar line and center is at shoulder midpoint
   geom.translate(0, -torsoH * 0.5, 0);
 
+  const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
+
   const material = new THREE.MeshStandardMaterial({
     color: 0x27272a,
     roughness: 0.85,
     metalness: 0.05,
     side: THREE.DoubleSide,
+    clippingPlanes: [clipPlane],
+    clipShadows: true,
   });
 
   const mesh = new THREE.Mesh(geom, material);
@@ -54,6 +59,7 @@ export function createFallbackGarment(): GarmentInstance {
     shoulderDistance: shoulderDist,
     torsoHeight: torsoH,
     collarOffset: collarH,
+    clipPlane,
   };
 }
 
@@ -94,11 +100,15 @@ export async function loadGarmentModel(
         const geometry = (shirtMesh as THREE.Mesh).geometry.clone();
         geometry.computeVertexNormals();
 
+        const clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
+
         const material = new THREE.MeshStandardMaterial({
           color: 0x27272a,
           roughness: 0.85,
           metalness: 0.04,
           side: THREE.DoubleSide,
+          clippingPlanes: [clipPlane],
+          clipShadows: true,
         });
 
         const mesh = new THREE.Mesh(geometry, material);
@@ -121,6 +131,7 @@ export async function loadGarmentModel(
           shoulderDistance,
           torsoHeight,
           collarOffset,
+          clipPlane,
         });
       },
       undefined,

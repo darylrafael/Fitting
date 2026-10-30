@@ -24,6 +24,9 @@ export class RigSolver {
   private targetEuler = new THREE.Euler(0, 0, 0, "YXZ");
   private targetQuaternion = new THREE.Quaternion();
 
+  private vZPositive = new THREE.Vector3(0, 0, 1);
+  private localClipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.01);
+
   private isInitialized = false;
   private lostTrackingFrames = 0;
   private readonly maxLostTrackingFrames = 6;
@@ -134,8 +137,8 @@ export class RigSolver {
 
     // 3. Compute Midpoints & Anatomical Suprasternal Anchor
     this.vMidShoulder.addVectors(this.vLS, this.vRS).multiplyScalar(0.5);
-    // Lift anchor by 10% of shoulder width to align collar with suprasternal notch
-    this.vMidShoulder.y += measuredShoulderDist * 0.10;
+    // Lift anchor by 22% of shoulder width to drape over trapezius crest and frame neck base
+    this.vMidShoulder.y += measuredShoulderDist * 0.22;
 
     if (hasHips) {
       this.vMidHip.addVectors(this.vLH, this.vRH).multiplyScalar(0.5);
@@ -199,6 +202,12 @@ export class RigSolver {
       model.group.position.lerp(this.vMidShoulder, 0.45);
       model.group.scale.lerp(this.targetScale, 0.35);
       model.group.quaternion.slerp(this.targetQuaternion, 0.40);
+    }
+
+    // 7. Dynamic Back-Panel Culling (clips interior back wall to expose real webcam neck)
+    if (model.clipPlane) {
+      this.localClipPlane.set(this.vZPositive, 0.01);
+      model.clipPlane.copy(this.localClipPlane).applyMatrix4(model.group.matrixWorld);
     }
 
     model.group.visible = true;
