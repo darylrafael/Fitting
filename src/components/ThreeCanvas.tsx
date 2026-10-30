@@ -3,7 +3,10 @@
 import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Landmark } from "../types/pose";
-import { createTShirtArchetype, TShirtRig } from "../engine/tshirtArchetype";
+import {
+  createRetailTShirtArchetype,
+  TShirtArchetypeModel,
+} from "../engine/tshirtArchetype";
 import { RigSolver } from "../engine/rigSolver";
 
 interface ThreeCanvasProps {
@@ -23,72 +26,68 @@ export function ThreeCanvas({
   isWireframe = false,
   garmentColor = "#27272a",
 }: ThreeCanvasProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const rigRef = useRef<TShirtRig | null>(null);
+  const modelRef = useRef<TShirtArchetypeModel | null>(null);
   const solverRef = useRef<RigSolver>(new RigSolver());
   const landmarksRef = useRef<Landmark[] | null>(landmarks);
   const animFrameIdRef = useRef<number | null>(null);
 
-  // Keep landmarksRef up-to-date without triggering recreation of Three.js context
   landmarksRef.current = landmarks;
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const canvas = canvasRef.current;
+    if (!canvas || width <= 0 || height <= 0) return;
 
-    // 1. Scene & Camera Setup
+    // 1. Scene & Calibrated 1:1 Orthographic Camera
+    // Maps screen pixels [0..width, 0..height] directly to Three.js space
     const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(0, width, height, 0, -1000, 1000);
+    camera.position.set(0, 0, 500);
+    camera.lookAt(0, 0, 0);
 
-    const fov = 60;
-    const aspect = width / height;
-    const camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 100);
-    camera.position.set(0, 0, 2.0); // Z = 2.0m calibrated to RigSolver planeHeight
-
-    // 2. WebGLRenderer with Alpha
+    // 2. High-Performance WebGLRenderer with Alpha
     const renderer = new THREE.WebGLRenderer({
+      canvas,
       alpha: true,
       antialias: true,
       powerPreference: "high-performance",
     });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(width, height, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-
-    container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 3. Studio Lighting (Key, Fill, Rim)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    // 3. Studio Lighting Rig
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    keyLight.position.set(1.5, 2.5, 2.0);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    keyLight.position.set(width * 0.3, height * 0.8, 400);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x94a3b8, 1.0);
-    fillLight.position.set(-1.5, 1.0, 1.5);
+    const fillLight = new THREE.DirectionalLight(0x94a3b8, 1.1);
+    fillLight.position.set(-width * 0.3, height * 0.2, 300);
     scene.add(fillLight);
 
-    // 4. Create and add 3D T-Shirt SkinnedMesh
-    const rig = createTShirtArchetype();
-    scene.add(rig.mesh);
-    rigRef.current = rig;
+    // 4. Create Tailored T-Shirt Archetype
+    const model = createRetailTShirtArchetype();
+    scene.add(model.group);
+    modelRef.current = model;
 
-    // 5. Render Loop (60 FPS)
+    // 5. Render Loop (Synchronized at 60 FPS)
     const renderLoop = (timestamp: number) => {
-      if (rigRef.current) {
+      if (modelRef.current) {
         if (showGarment) {
           solverRef.current.update(
-            rigRef.current,
+            modelRef.current,
             landmarksRef.current,
-            width / height,
+            width,
+            height,
             timestamp
           );
         } else {
-          rigRef.current.mesh.visible = false;
+          modelRef.current.group.visible = false;
         }
       }
 
@@ -102,19 +101,16 @@ export function ThreeCanvas({
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current);
       }
-      if (renderer.domElement && container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
       renderer.dispose();
       scene.clear();
       solverRef.current.reset();
     };
   }, [width, height, showGarment]);
 
-  // Update Material Properties dynamically
+  // Dynamic Material Updates (Color & Wireframe toggle)
   useEffect(() => {
-    if (rigRef.current) {
-      const mat = rigRef.current.mesh.material as THREE.MeshStandardMaterial;
+    if (modelRef.current) {
+      const mat = modelRef.current.material;
       mat.wireframe = isWireframe;
       mat.color.set(garmentColor);
       mat.needsUpdate = true;
@@ -122,9 +118,11 @@ export function ThreeCanvas({
   }, [isWireframe, garmentColor]);
 
   return (
-    <div
-      ref={containerRef}
-      className="absolute inset-0 pointer-events-none z-15 w-full h-full"
+    <canvas
+      ref={canvasRef}
+      width={width}
+      height={height}
+      className="absolute inset-0 pointer-events-none z-15 w-full h-full object-cover -scale-x-100"
     />
   );
 }
