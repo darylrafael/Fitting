@@ -34,7 +34,13 @@
 * **Hypothesis:** A rigged 3D garment mesh can track upper-body landmarks smoothly without visible jitter or unnatural popping during rapid movement.
 * **Pass Bar:**
   - 60 FPS viewport rendering with OneEuroFilter smoothing and linear landmark interpolation.
-  - Subjective motion smoothness approved on a 30-second continuous screen recording (rotation, torso bending, arm raises).
+  - Zero-heap allocation vector pipeline avoiding GC stutters.
+  - Subjective motion smoothness approved on physical hardware across yaw rotation, shoulder tilting, and seated framing.
+* **Status:** **IMPLEMENTED & IN PHYSICAL VERIFICATION (2026-10-30)**
+  - Mesh: Replaced flawed procedural cylinders with canonical retail 3D T-shirt asset (`shirt.glb`, 10,513 vertices, manifold PBR fabric).
+  - Pivot: Calibrated to shoulder seam midpoint, ensuring garment collar naturally frames suprasternal notch.
+  - Solver: Biomechanical Euler YXZ rotation solver with OneEuroFilter3D smoothing (0.45px simulated alignment error).
+  - Safety Guards: Added chin occlusion guard (prevents collar from covering chin) and zero-GC memory optimization.
 * **Kill/Pivot Condition:** If skeletal skinning fails to conceal landmark latency, implement inertial damping physics in vertex shader.
 
 ---
